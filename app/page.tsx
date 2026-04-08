@@ -32,35 +32,7 @@ import type {
   OpenAIProxyProbeResponse,
   OpenAIProxyTestResponse
 } from "@/lib/openai-proxy-types";
-
-type KeyConfig = {
-  id: string;
-  name: string;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  createdAt: string;
-  sourceMeta?: {
-    kind: "manual" | "cc-switch-provider" | "cc-switch-deeplink";
-    ccSwitchApp?: CcSwitchApp;
-  };
-  probe?: {
-    status: "success" | "error";
-    supportedModels: string[];
-    recommendedModel?: string;
-    detail?: string;
-    testedAt: string;
-  };
-  lastTest?: {
-    status: "success" | "error";
-    message: string;
-    detail?: string;
-    responseText?: string;
-    responseSource?: "stream" | "chat" | "responses";
-    testedAt: string;
-  };
-  benchmarks?: Record<string, FinishedModelBenchmarkResult>;
-};
+import type { CcSwitchApp, KeyConfig, KeyConfigInput, KeyConfigPatch } from "@/lib/key-config-types";
 
 type FormState = {
   name: string;
@@ -71,7 +43,6 @@ type FormState = {
 
 type ExportType = "md" | "txt";
 type TestStatus = "idle" | "pending" | "success" | "error";
-type CcSwitchApp = "claude" | "codex" | "gemini" | "opencode" | "openclaw";
 
 type TestResult = {
   status: TestStatus;
@@ -120,6 +91,12 @@ type FinishedModelBenchmarkResult = ModelBenchmarkResult & {
   status: "success" | "error";
   testedAt: string;
 };
+type ConfigListResponse = {
+  configs: KeyConfig[];
+};
+type ConfigItemResponse = {
+  config: KeyConfig;
+};
 type BenchmarkBatchProgress = {
   configId: string;
   models: string[];
@@ -154,8 +131,7 @@ type CcSwitchAction = {
   tone?: "default" | "accent";
 };
 
-const STORAGE_KEY = "ai-key-vault-configs-v1";
-const LEGACY_STORAGE_KEYS = ["ai-key-vault-configs", "ai-key-check-configs-v1"];
+const LEGACY_CONFIG_STORAGE_KEYS = ["ai-key-vault-configs-v1", "ai-key-vault-configs", "ai-key-check-configs-v1"];
 const INTRO_SEEN_KEY = "ai-key-vault-intro-seen-v1";
 const SOURCE_REPO_URL = "https://github.com/Yoan98/ai-key-manage";
 const PASS_TEXT = "主人，快鞭策我吧";
@@ -1247,6 +1223,28 @@ async function postJsonWithTimeout<TResponse>(url: string, body: unknown, timeou
   )) as TResponse;
 }
 
+async function getJsonWithTimeout<TResponse>(url: string, timeoutMs: number): Promise<TResponse> {
+  return (await fetchJsonWithTimeout(url, { method: "GET" }, timeoutMs)) as TResponse;
+}
+
+async function patchJsonWithTimeout<TResponse>(url: string, body: unknown, timeoutMs: number): Promise<TResponse> {
+  return (await fetchJsonWithTimeout(
+    url,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    },
+    timeoutMs
+  )) as TResponse;
+}
+
+async function deleteJsonWithTimeout<TResponse>(url: string, timeoutMs: number): Promise<TResponse> {
+  return (await fetchJsonWithTimeout(url, { method: "DELETE" }, timeoutMs)) as TResponse;
+}
+
 function inferCcSwitchHomepage(endpoint: string): string {
   try {
     const parsed = new URL(endpoint);
@@ -1385,7 +1383,7 @@ function normalizeStoredConfigs(raw: string): KeyConfig[] {
 }
 
 function loadConfigsFromStorage(storage: Storage): { configs: KeyConfig[]; sourceKey?: string } {
-  const candidateKeys = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS];
+  const candidateKeys = LEGACY_CONFIG_STORAGE_KEYS;
 
   for (const key of candidateKeys) {
     const raw = storage.getItem(key);
@@ -1402,6 +1400,12 @@ function loadConfigsFromStorage(storage: Storage): { configs: KeyConfig[]; sourc
   }
 
   return { configs: [] };
+}
+
+function clearConfigsFromStorage(storage: Storage) {
+  for (const key of LEGACY_CONFIG_STORAGE_KEYS) {
+    storage.removeItem(key);
+  }
 }
 
 function defaultTestResult(): TestResult {
@@ -1449,6 +1453,8 @@ function HelpHint({ text }: { text: string }) {
 
 export default function Home() {
   const [configs, setConfigs] = useState<KeyConfig[]>([]);
+  const [configsLoading, setConfigsLoading] = useState(true);
+  const [localImportCandidates, setLocalImportCandidates] = useState<KeyConfig[]>([]);
   const [form, setForm] = useState<FormState>({ name: "", baseUrl: "", apiKey: "", model: "" });
   const [formSourceMeta, setFormSourceMeta] = useState<KeyConfig["sourceMeta"]>();
   const [pasteRaw, setPasteRaw] = useState("");
@@ -1476,20 +1482,37 @@ export default function Home() {
   const [benchmarkListCollapsed, setBenchmarkListCollapsed] = useState(false);
   const [benchmarkDetailModel, setBenchmarkDetailModel] = useState("");
   const [introExpanded, setIntroExpanded] = useState(false);
+  const configsRef = useRef<KeyConfig[]>([]);
+  const benchmarkMapRef = useRef<Record<string, Record<string, ModelBenchmarkResult>>>({});
 
   useEffect(() => {
-    const { configs: restoredConfigs, sourceKey } = loadConfigsFromStorage(localStorage);
-    if (restoredConfigs.length === 0) return;
+    let cancelled = false;
 
-    setConfigs(restoredConfigs);
-    if (sourceKey && sourceKey !== STORAGE_KEY) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(restoredConfigs));
+    async function loadConfigs() {
+      try {
+        const response = await getJsonWithTimeout<ConfigListResponse>("/api/configs", 15000);
+        if (cancelled) return;
+
+        setConfigs(response.configs);
+        setConfigsLoading(false);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setConfigsLoading(false);
+        setNotice(getErrorMessage(error) || "读取配置失败，请确认 D1 已初始化");
+      }
     }
-  }, []);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
-  }, [configs]);
+    loadConfigs();
+
+    const { configs: storedConfigs } = loadConfigsFromStorage(localStorage);
+    if (!cancelled) {
+      setLocalImportCandidates(storedConfigs);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const seen = localStorage.getItem(INTRO_SEEN_KEY) === "1";
@@ -1504,6 +1527,14 @@ export default function Home() {
     const timer = window.setTimeout(() => setNotice(""), 2200);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    configsRef.current = configs;
+  }, [configs]);
+
+  useEffect(() => {
+    benchmarkMapRef.current = benchmarkMap;
+  }, [benchmarkMap]);
 
   const nextIndex = useMemo(() => configs.length + 1, [configs.length]);
   const ccSwitchDialogItem = useMemo(
@@ -1990,47 +2021,53 @@ export default function Home() {
     }
   }
 
-  function addItem(name: string, baseUrl: string, apiKey: string, model: string, sourceMeta?: KeyConfig["sourceMeta"]) {
-    const item: KeyConfig = {
-      id: crypto.randomUUID(),
-      name,
-      baseUrl,
-      apiKey,
-      model,
-      createdAt: new Date().toISOString(),
-      sourceMeta: sourceMeta || { kind: "manual" }
-    };
-    setConfigs((prev) => [item, ...prev]);
+  async function createConfigsInD1(items: KeyConfigInput[]): Promise<KeyConfig[]> {
+    const response = await postJsonWithTimeout<ConfigListResponse>(
+      "/api/configs",
+      { configs: items },
+      20000
+    );
+    setConfigs((prev) => [...response.configs, ...prev]);
+    return response.configs;
+  }
+
+  async function persistConfigPatch(id: string, patch: KeyConfigPatch): Promise<KeyConfig> {
+    const response = await patchJsonWithTimeout<ConfigItemResponse>(`/api/configs/${id}`, patch, 20000);
+    setConfigs((prev) => prev.map((item) => (item.id === id ? response.config : item)));
+    return response.config;
+  }
+
+  function resetCreateForm() {
     setForm({ name: "", baseUrl: "", apiKey: "", model: "" });
     setFormSourceMeta(undefined);
     setPasteRaw("");
   }
 
-  function addFromPaste() {
+  async function addFromPaste() {
     const parsed = parsePastedConfigs(pasteRaw, nextIndex);
     if (parsed.length === 0) {
       setNotice("未识别到可插入字段");
       return;
     }
 
-    const newItems: KeyConfig[] = parsed.map((item) => ({
-      id: crypto.randomUUID(),
+    const newItems: KeyConfigInput[] = parsed.map((item) => ({
       name: item.name,
       baseUrl: item.baseUrl,
       apiKey: item.apiKey,
       model: item.model,
-      createdAt: new Date().toISOString(),
       sourceMeta: item.sourceMeta || { kind: "manual" }
     }));
 
-    setConfigs((prev) => [...newItems, ...prev]);
-    setForm({ name: "", baseUrl: "", apiKey: "", model: "" });
-    setFormSourceMeta(undefined);
-    setPasteRaw("");
-    setNotice(`已新增 ${newItems.length} 个配置`);
+    try {
+      const created = await createConfigsInD1(newItems);
+      resetCreateForm();
+      setNotice(`已新增 ${created.length} 个配置`);
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "写入 D1 失败");
+    }
   }
 
-  function addConfig(e: React.FormEvent<HTMLFormElement>) {
+  async function addConfig(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const baseUrl = normalizeBaseUrl(form.baseUrl);
     const apiKey = cleanKey(form.apiKey);
@@ -2043,11 +2080,55 @@ export default function Home() {
     }
     if (!name) name = makeDefaultName(nextIndex);
 
-    addItem(name, baseUrl, apiKey, model, formSourceMeta);
-    setNotice("保存成功");
+    try {
+      await createConfigsInD1([
+        {
+          name,
+          baseUrl,
+          apiKey,
+          model,
+          sourceMeta: formSourceMeta || { kind: "manual" }
+        }
+      ]);
+      resetCreateForm();
+      setNotice("保存成功");
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "写入 D1 失败");
+    }
   }
 
-  function removeConfig(id: string) {
+  async function importLocalConfigs() {
+    if (localImportCandidates.length === 0) {
+      setNotice("没有可导入的本地配置");
+      return;
+    }
+
+    const importItems = localImportCandidates.map((item) => ({
+      name: item.name,
+      baseUrl: item.baseUrl,
+      apiKey: item.apiKey,
+      model: item.model,
+      sourceMeta: item.sourceMeta
+    }));
+
+    try {
+      const created = await createConfigsInD1(importItems);
+      clearConfigsFromStorage(localStorage);
+      setLocalImportCandidates([]);
+      setNotice(`已导入本地 ${created.length} 条配置到 D1`);
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "导入到 D1 失败");
+    }
+  }
+
+  async function removeConfig(id: string) {
+    try {
+      await deleteJsonWithTimeout<{ ok: true }>(`/api/configs/${id}`, 15000);
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "删除失败");
+      return;
+    }
+
     setConfigs((prev) => prev.filter((i) => i.id !== id));
     setResultMap((prev) => {
       const next = { ...prev };
@@ -2080,7 +2161,7 @@ export default function Home() {
     setNotice("已删除");
   }
 
-  function removeAllConfigs() {
+  async function removeAllConfigs() {
     if (configs.length === 0) {
       setNotice("暂无配置可删除");
       return;
@@ -2088,6 +2169,13 @@ export default function Home() {
 
     const confirmed = window.confirm(`确认删除全部 ${configs.length} 条配置吗？此操作不可恢复。`);
     if (!confirmed) return;
+
+    try {
+      await deleteJsonWithTimeout<{ ok: true }>("/api/configs", 20000);
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "删除失败");
+      return;
+    }
 
     setConfigs([]);
     setResultMap({});
@@ -2104,27 +2192,29 @@ export default function Home() {
     setNotice("已删除全部配置");
   }
 
-  function commitFinishedTestResult(id: string, result: FinishedTestResult) {
+  async function commitFinishedTestResult(id: string, result: FinishedTestResult) {
     setResultMap((prev) => ({ ...prev, [id]: result }));
-    setConfigs((prev) => prev.map((item) => (item.id === id ? { ...item, lastTest: result } : item)));
+    try {
+      await persistConfigPatch(id, { lastTest: result });
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "测试结果写入 D1 失败");
+    }
   }
 
-  function commitFinishedProbeResult(id: string, result: FinishedProbeResult) {
+  async function commitFinishedProbeResult(id: string, result: FinishedProbeResult) {
     setProbeMap((prev) => ({ ...prev, [id]: result }));
-    setConfigs((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              probe: result,
-              model: !item.model && result.recommendedModel ? result.recommendedModel : item.model
-            }
-          : item
-        )
-    );
+    const current = configsRef.current.find((item) => item.id === id);
+    try {
+      await persistConfigPatch(id, {
+        probe: result,
+        model: current && !current.model && result.recommendedModel ? result.recommendedModel : undefined
+      });
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "探测结果写入 D1 失败");
+    }
   }
 
-  function commitFinishedBenchmarkResult(id: string, model: string, result: FinishedModelBenchmarkResult) {
+  async function commitFinishedBenchmarkResult(id: string, model: string, result: FinishedModelBenchmarkResult) {
     setBenchmarkMap((prev) => ({
       ...prev,
       [id]: {
@@ -2132,19 +2222,19 @@ export default function Home() {
         [model]: result
       }
     }));
-    setConfigs((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              benchmarks: {
-                ...(item.benchmarks || {}),
-                [model]: result
-              }
-            }
-          : item
-      )
-    );
+
+    const current = configsRef.current.find((item) => item.id === id);
+    const benchmarks = {
+      ...(current?.benchmarks || {}),
+      ...(benchmarkMapRef.current[id] || {}),
+      [model]: result
+    };
+
+    try {
+      await persistConfigPatch(id, { benchmarks });
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "测速结果写入 D1 失败");
+    }
   }
 
   function setPendingBenchmarkResult(id: string, model: string, tags: string[]) {
@@ -2195,7 +2285,7 @@ export default function Home() {
     const apiKey = cleanKey(item.apiKey);
 
     if (!baseUrl || !apiKey) {
-      commitFinishedTestResult(item.id, {
+      await commitFinishedTestResult(item.id, {
         status: "error",
         message: FAIL_TEXT,
         detail: "地址或 Key 为空",
@@ -2216,10 +2306,10 @@ export default function Home() {
         45000
       );
 
-      commitFinishedTestResult(item.id, response.result);
+      await commitFinishedTestResult(item.id, response.result);
       return response.ok;
     } catch (error: unknown) {
-      commitFinishedTestResult(item.id, {
+      await commitFinishedTestResult(item.id, {
         status: "error",
         message: FAIL_TEXT,
         detail: makeErrorDetail(error),
@@ -2249,7 +2339,7 @@ export default function Home() {
     const apiKey = cleanKey(item.apiKey);
 
     if (!baseUrl || !apiKey) {
-      commitFinishedProbeResult(item.id, {
+      await commitFinishedProbeResult(item.id, {
         status: "error",
         supportedModels: [],
         detail: "地址或 Key 为空，无法探测模型",
@@ -2268,10 +2358,10 @@ export default function Home() {
         },
         20000
       );
-      commitFinishedProbeResult(item.id, response.result);
+      await commitFinishedProbeResult(item.id, response.result);
       return response.ok;
     } catch (error: unknown) {
-      commitFinishedProbeResult(item.id, {
+      await commitFinishedProbeResult(item.id, {
         status: "error",
         supportedModels: [],
         detail: makeErrorDetail(error),
@@ -2294,7 +2384,7 @@ export default function Home() {
     setPendingBenchmarkResult(item.id, model, tags);
 
     if (!baseUrl || !apiKey) {
-      commitFinishedBenchmarkResult(item.id, model, {
+      await commitFinishedBenchmarkResult(item.id, model, {
         status: "error",
         model,
         tags,
@@ -2355,7 +2445,7 @@ export default function Home() {
     }
 
     if (elapsedSamples.length === 0) {
-      commitFinishedBenchmarkResult(item.id, model, {
+      await commitFinishedBenchmarkResult(item.id, model, {
         status: "error",
         model,
         tags,
@@ -2407,7 +2497,7 @@ export default function Home() {
       detail: detailParts.join("；"),
       testedAt: new Date().toISOString()
     };
-    commitFinishedBenchmarkResult(item.id, model, result);
+    await commitFinishedBenchmarkResult(item.id, model, result);
     return result;
   }
 
@@ -2687,18 +2777,12 @@ export default function Home() {
     await copyText(model, `已复制模型 ${model}`);
   }
 
-  function applyProbeModel(id: string, model: string) {
+  async function applyProbeModel(id: string, model: string) {
     const nextModel = model.trim();
     if (!nextModel) return;
 
     const original = configs.find((item) => item.id === id);
     const resetLastTest = original ? (original.model || "") !== nextModel : false;
-
-    setConfigs((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, model: nextModel, lastTest: resetLastTest ? undefined : item.lastTest } : item
-      )
-    );
 
     if (resetLastTest) {
       setResultMap((prev) => {
@@ -2712,7 +2796,15 @@ export default function Home() {
       setModelDraft(nextModel);
     }
 
-    setNotice(`已切换为 ${nextModel}`);
+    try {
+      await persistConfigPatch(id, {
+        model: nextModel,
+        lastTest: resetLastTest ? null : original?.lastTest
+      });
+      setNotice(`已切换为 ${nextModel}`);
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "更新模型失败");
+    }
   }
 
   function startEdit(item: KeyConfig) {
@@ -2725,7 +2817,7 @@ export default function Home() {
     setEditForm({ name: "", baseUrl: "", apiKey: "", model: "" });
   }
 
-  function saveEdit(id: string) {
+  async function saveEdit(id: string) {
     const baseUrl = normalizeBaseUrl(editForm.baseUrl);
     const apiKey = cleanKey(editForm.apiKey);
     const name = editForm.name.trim();
@@ -2742,23 +2834,6 @@ export default function Home() {
       : false;
     const resetProbe = original ? original.baseUrl !== baseUrl || original.apiKey !== apiKey : false;
     const resetBenchmarks = resetProbe;
-
-    setConfigs((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              name: name || item.name,
-              baseUrl,
-              apiKey,
-              model,
-              lastTest: resetLastTest ? undefined : item.lastTest,
-              probe: resetProbe ? undefined : item.probe,
-              benchmarks: resetBenchmarks ? undefined : item.benchmarks
-            }
-          : item
-      )
-    );
     if (resetLastTest) {
       setResultMap((prev) => {
         const next = { ...prev };
@@ -2786,8 +2861,21 @@ export default function Home() {
       setModelDraft("");
     }
 
-    cancelEdit();
-    setNotice("已保存编辑");
+    try {
+      await persistConfigPatch(id, {
+        name: name || original?.name || "",
+        baseUrl,
+        apiKey,
+        model,
+        lastTest: resetLastTest ? null : original?.lastTest,
+        probe: resetProbe ? null : original?.probe,
+        benchmarks: resetBenchmarks ? null : original?.benchmarks
+      });
+      cancelEdit();
+      setNotice("已保存编辑");
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "保存编辑失败");
+    }
   }
 
   function startInlineModelEdit(item: KeyConfig) {
@@ -2795,14 +2883,10 @@ export default function Home() {
     setModelDraft(item.model || "");
   }
 
-  function saveInlineModelEdit(id: string) {
+  async function saveInlineModelEdit(id: string) {
     const nextModel = modelDraft.trim();
     const original = configs.find((item) => item.id === id);
     const resetLastTest = original ? (original.model || "") !== nextModel : false;
-
-    setConfigs((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, model: nextModel, lastTest: resetLastTest ? undefined : item.lastTest } : item))
-    );
     if (resetLastTest) {
       setResultMap((prev) => {
         const next = { ...prev };
@@ -2810,9 +2894,17 @@ export default function Home() {
         return next;
       });
     }
-    setEditingModelId(null);
-    setModelDraft("");
-    setNotice("模型已更新");
+    try {
+      await persistConfigPatch(id, {
+        model: nextModel,
+        lastTest: resetLastTest ? null : original?.lastTest
+      });
+      setEditingModelId(null);
+      setModelDraft("");
+      setNotice("模型已更新");
+    } catch (error: unknown) {
+      setNotice(getErrorMessage(error) || "模型更新失败");
+    }
   }
 
   function cancelInlineModelEdit() {
@@ -2835,7 +2927,7 @@ export default function Home() {
             />
             <span>AI Key Vault</span>
           </h1>
-          <p className="mt-1 text-sm text-zinc-500">本地保存、批量测试、模型识别、性能评测、复制与导出</p>
+          <p className="mt-1 text-sm text-zinc-500">D1 持久化、批量测试、模型识别、性能评测、复制与导出</p>
         </div>
         <a
           href={SOURCE_REPO_URL}
@@ -2869,9 +2961,9 @@ export default function Home() {
           aria-label={introExpanded ? "收起介绍" : "展开介绍"}
         >
           <div>
-            <p className="text-base font-extrabold text-emerald-900 sm:text-lg">这是你的 AI API Key 本地保险箱</p>
+            <p className="text-base font-extrabold text-emerald-900 sm:text-lg">这是你的 AI API Key D1 保险箱</p>
             <p className="mt-1 text-xs font-medium text-emerald-700/90">
-              {introExpanded ? "点击收起说明" : "包含本地保存、后端代理与使用说明；点击展开"}
+              {introExpanded ? "点击收起说明" : "包含 D1 存储、后端代理与使用说明；点击展开"}
             </p>
           </div>
           <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white/80 text-emerald-700">
@@ -2882,7 +2974,7 @@ export default function Home() {
         {introExpanded ? (
           <>
             <p className="mt-2 text-sm leading-6 text-emerald-800">
-              统一管理名称、地址、Key 和模型，支持一键测试、模型识别、性能评测和唤起 CC Switch；配置数据默认仅保存在当前浏览器本地。
+              统一管理名称、地址、Key 和模型，支持一键测试、模型识别、性能评测和唤起 CC Switch；配置数据现在会写入 D1，不再以浏览器本地作为主存储。
             </p>
             <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
               <div className="flex items-start gap-2.5">
@@ -2981,6 +3073,12 @@ export default function Home() {
               <HelpHint text={endpointHintText} />
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 pb-1">
+              {localImportCandidates.length > 0 ? (
+                <button type="button" className={topBtnGhost} onClick={importLocalConfigs}>
+                  <FaPaste aria-hidden />
+                  <span>导入本地 {localImportCandidates.length} 条</span>
+                </button>
+              ) : null}
               <button type="button" className={topBtnPrimary} onClick={testAllConfigs} disabled={testingAll}>
                 {testingAll ? <FaSpinner className="animate-spin" aria-hidden /> : <FaBolt aria-hidden />}
                 <span>{testingAll ? "测试中" : "一键测试全部"}</span>
@@ -3014,7 +3112,9 @@ export default function Home() {
             </div>
           </div>
 
-          {configs.length === 0 ? (
+          {configsLoading ? (
+            <p className="text-sm text-zinc-500">正在从 D1 读取配置...</p>
+          ) : configs.length === 0 ? (
             <p className="text-sm text-zinc-500">暂无配置</p>
           ) : (
             <ul className="grid gap-2.5">
