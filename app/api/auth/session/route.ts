@@ -7,6 +7,7 @@ import {
   getSessionMaxAgeSeconds,
   verifyAccessPassword,
 } from "@/lib/server/access-auth";
+import { readLocalDevAccessPassword } from "@/lib/server/local-dev-password";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
   }
 
   const password = typeof body.password === "string" ? body.password : "";
-  const accessPassword = getAccessPasswordFromRuntimeSync();
+  const accessPassword = getAccessPasswordFromRuntimeSync() || readLocalDevAccessPassword();
 
   if (!accessPassword) {
     return NextResponse.json({ message: "当前还没有配置访问密码" }, { status: 503 });

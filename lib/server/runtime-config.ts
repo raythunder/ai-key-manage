@@ -1,4 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { getAccessPasswordFromRuntimeSync } from "@/lib/server/access-auth";
+import { readLocalDevAccessPassword } from "@/lib/server/local-dev-password";
 
 type RuntimeEnv = CloudflareEnv & {
   ACCESS_PASSWORD?: string;
@@ -27,14 +29,9 @@ async function readCloudflareEnv(): Promise<RuntimeEnv | null> {
   }
 }
 
-function readLocalPassword(): string | null {
-  const value = process.env.ACCESS_PASSWORD;
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   const env = await readCloudflareEnv();
-  const accessPassword = env?.ACCESS_PASSWORD?.trim() || readLocalPassword();
+  const accessPassword = env?.ACCESS_PASSWORD?.trim() || getAccessPasswordFromRuntimeSync() || readLocalDevAccessPassword();
   const database = env?.DB ?? null;
 
   return {
