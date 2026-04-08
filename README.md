@@ -56,14 +56,15 @@
 
 ## 隐私和数据说明
 
-这个项目默认把配置数据保存在浏览器本地的 `localStorage` 里，不接数据库，也不会帮你托管 Key。
+当前这版项目默认还是把配置数据保存在浏览器本地的 `localStorage` 里，不会帮你托管 Key。
 
 但有一点要说明白: 连通性测试、模型识别、性能评测这类真实联网请求，还是会经过项目自己的同源后端接口转发。这样做主要是为了绕开浏览器直连上游时常见的 CORS 问题。
 
 简单理解就是:
 
-- 配置数据默认存在你自己的浏览器里
-- 项目没有做数据库存储逻辑
+- 配置数据当前默认还在你自己的浏览器里
+- 项目已经补上 Cloudflare D1 的部署基础和初始化表结构
+- 访问密码将通过 Cloudflare Secret 或本地 `.dev.vars` 提供
 - 真正发请求测试时，Key 会参与当前这次后端转发请求
 
 ## 快速开始
@@ -75,14 +76,49 @@ npm run dev
 
 打开 [http://localhost:3000](http://localhost:3000) 就能开始用。
 
-## 打包部署
+## 本地开发
 
 ```bash
-npm run build
-npm run start
+npm install
+npm run dev
 ```
 
-部署到支持 Next.js 的平台也没问题，比如 Vercel、Netlify 等。
+打开 [http://localhost:3000](http://localhost:3000) 就能开始用。
+
+如果要提前按 Cloudflare 运行环境做验证:
+
+```bash
+cp .dev.vars.example .dev.vars
+npm run cf-typegen
+npm run preview
+```
+
+本地 D1 初始化命令:
+
+```bash
+npx wrangler d1 execute ai-key-vault --local --file=./db/d1/001_initial.sql
+```
+
+## Cloudflare 部署准备
+
+1. 创建一个 D1 数据库
+2. 把 `wrangler.jsonc` 里的 `database_id` 换成真实值
+3. 用 `wrangler secret put ACCESS_PASSWORD` 设置访问密码
+4. 首次部署前执行一次 D1 初始化 SQL
+
+常用命令:
+
+```bash
+npm run cf-typegen
+npm run preview
+npm run deploy
+```
+
+远程初始化 D1:
+
+```bash
+npx wrangler d1 execute ai-key-vault --remote --file=./db/d1/001_initial.sql
+```
 
 ## 使用方式很简单
 

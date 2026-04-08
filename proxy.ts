@@ -51,6 +51,8 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+export const runtime = "edge";
+
 export const config = {
   matcher: ["/service-worker.js", "/@vite/client", "/@react-refresh", "/src/main.tsx", "/icons/icon-192x192.png"],
 };
