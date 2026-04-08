@@ -1427,13 +1427,6 @@ function defaultTestResult(): TestResult {
   return { status: "idle", message: "未测试" };
 }
 
-function testResponseSourceLabel(source?: TestResult["responseSource"]): string {
-  if (source === "stream") return "流式";
-  if (source === "responses") return "Responses";
-  if (source === "chat") return "普通";
-  return "";
-}
-
 function statusPillClass(status: TestStatus): string {
   if (status === "success") return "bg-emerald-50 text-emerald-800";
   if (status === "error") return "bg-red-50 text-red-700";
@@ -2079,6 +2072,7 @@ export default function Home() {
     try {
       const created = await createConfigsInD1(newItems);
       resetCreateForm();
+      setCreateDialogOpen(false);
       setNotice(`已新增 ${created.length} 个配置`);
     } catch (error: unknown) {
       setNotice(getErrorMessage(error) || "写入 D1 失败");
@@ -2109,6 +2103,7 @@ export default function Home() {
         }
       ]);
       resetCreateForm();
+      setCreateDialogOpen(false);
       setNotice("保存成功");
     } catch (error: unknown) {
       setNotice(getErrorMessage(error) || "写入 D1 失败");
@@ -2730,12 +2725,6 @@ export default function Home() {
     setCcSwitchDialogId(null);
     window.location.assign(link);
     setNotice(`已尝试唤起 CC Switch（${app}）`);
-  }
-
-  function openProbeDialog(item: KeyConfig) {
-    setBenchmarkDialogId(null);
-    setBenchmarkBatch(null);
-    setProbeDialogId(item.id);
   }
 
   function openDetailDialog(item: KeyConfig) {
