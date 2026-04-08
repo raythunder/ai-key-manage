@@ -1214,9 +1214,16 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: n
     }
 
     if (!response.ok) {
+      const message = getErrorMessage(payload) || `HTTP ${response.status}`;
+
+      if (response.status === 401 && /访问密码|未授权/.test(message)) {
+        const nextPath = `${window.location.pathname}${window.location.search}`;
+        window.location.href = `/unlock?next=${encodeURIComponent(nextPath)}`;
+      }
+
       throw {
         status: response.status,
-        message: getErrorMessage(payload) || `HTTP ${response.status}`
+        message
       };
     }
 
@@ -1315,7 +1322,8 @@ function makeErrorDetail(error: unknown): string {
   const raw = getErrorMessage(error);
 
   let detail = "测试异常，请检查地址或模型";
-  if (status === 401 || status === 403) detail = "Key 无效或权限不足";
+  if (status === 401 && /访问密码|未授权/.test(raw)) detail = "请先输入访问密码";
+  else if (status === 401 || status === 403) detail = "Key 无效或权限不足";
   else if (status === 404) detail = "地址可达，但聊天接口不存在";
   else if (typeof status === "number") detail = `请求失败（HTTP ${status}）`;
   else if (name === "AbortError" || /timeout|timed out/i.test(raw)) detail = "请求超时，请检查地址";
@@ -2543,6 +2551,16 @@ export default function Home() {
     }
   }
 
+  async function lockAccessSession() {
+    try {
+      await fetch("/api/auth/session", { method: "DELETE" });
+    } catch {
+      // Ignore logout transport errors and still force the app back to the unlock page.
+    }
+
+    window.location.href = "/unlock";
+  }
+
   function downloadText(filename: string, content: string) {
     if (!content) {
       setNotice("没有可导出的内容");
@@ -2980,6 +2998,10 @@ export default function Home() {
                 <span>复制全部</span>
               </button>
               <ExportMenu onExport={exportAll} label="导出" triggerClassName={topBtnGhost} />
+              <button type="button" className={topBtnGhost} onClick={lockAccessSession}>
+                <FaKey aria-hidden />
+                <span>锁定并退出</span>
+              </button>
               <button
                 type="button"
                 className={topBtnDanger}
