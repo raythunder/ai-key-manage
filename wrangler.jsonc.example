@@ -11,9 +11,10 @@
   "observability": {
     "enabled": true
   },
+  // Optional: replace with your custom domain, or remove this block if you do not need routes.
   "routes": [
     {
-      "pattern": "key.raythunder.tech",
+      "pattern": "your-domain.example.com",
       "custom_domain": true
     }
   ],
@@ -21,7 +22,7 @@
     {
       "binding": "DB",
       "database_name": "ai-key-vault",
-      "database_id": "b39220b3-ba8b-4af2-82a6-d0ba5c902a4d"
+      "database_id": "replace-with-your-d1-database-id"
     }
   ]
 }

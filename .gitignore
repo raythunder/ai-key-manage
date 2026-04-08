@@ -18,6 +18,8 @@
 /out/
 /.wrangler/
 /.open-next/
+/wrangler.jsonc
+!/wrangler.jsonc.example
 
 # production
 /build

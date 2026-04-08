@@ -87,6 +87,7 @@ npm run dev
 推荐按 Cloudflare 运行环境验证，这样配置读写才会真正落到 D1:
 
 ```bash
+test -f wrangler.jsonc || cp wrangler.jsonc.example wrangler.jsonc
 cp .dev.vars.example .dev.vars
 npx wrangler d1 execute ai-key-vault --local --file=./db/d1/001_initial.sql
 npm run cf-typegen
@@ -103,11 +104,14 @@ npx wrangler d1 execute ai-key-vault --local --file=./db/d1/001_initial.sql
 
 ## Cloudflare 部署准备
 
-1. 创建一个 D1 数据库
-2. 把 `wrangler.jsonc` 里的 `database_id` 换成真实值
-3. 用 `wrangler secret put ACCESS_PASSWORD` 设置访问密码
-4. 首次部署前执行一次 D1 初始化 SQL
-5. 如果要绑定正式域名，可以直接在 `wrangler.jsonc` 的 `routes` 里配置 Custom Domain
+1. 先执行 `test -f wrangler.jsonc || cp wrangler.jsonc.example wrangler.jsonc`，生成本地配置文件
+2. 创建一个 D1 数据库
+3. 把本地 `wrangler.jsonc` 里的 `database_id` 换成真实值
+4. 用 `wrangler secret put ACCESS_PASSWORD` 设置访问密码
+5. 首次部署前执行一次 D1 初始化 SQL
+6. 如果要绑定正式域名，可以直接在本地 `wrangler.jsonc` 的 `routes` 里配置 Custom Domain
+
+`wrangler.jsonc` 已加入忽略规则，不会再进入版本管理；可提交的模板文件是 `wrangler.jsonc.example`。
 
 当前项目已经预置:
 
