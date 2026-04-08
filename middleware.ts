@@ -33,7 +33,7 @@ function jsResponse(body: string): NextResponse {
   });
 }
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname === "/service-worker.js") {
@@ -51,8 +51,7 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const runtime = "edge";
-
 export const config = {
   matcher: ["/service-worker.js", "/@vite/client", "/@react-refresh", "/src/main.tsx", "/icons/icon-192x192.png"],
+  runtime: "experimental-edge",
 };
