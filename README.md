@@ -107,6 +107,21 @@ npx wrangler d1 execute ai-key-vault --local --file=./db/d1/001_initial.sql
 2. 把 `wrangler.jsonc` 里的 `database_id` 换成真实值
 3. 用 `wrangler secret put ACCESS_PASSWORD` 设置访问密码
 4. 首次部署前执行一次 D1 初始化 SQL
+5. 如果要绑定正式域名，可以直接在 `wrangler.jsonc` 的 `routes` 里配置 Custom Domain
+
+当前项目已经预置:
+
+```jsonc
+"routes": [
+  {
+    "pattern": "key.raythunder.tech",
+    "custom_domain": true
+  }
+]
+```
+
+这类配置会在部署时让 Cloudflare 自动为该子域名创建所需记录和证书。
+前提是 `raythunder.tech` 这个 Zone 已经在同一个 Cloudflare 账号下，且 `key.raythunder.tech` 没有冲突的现有 CNAME 记录。
 
 常用命令:
 

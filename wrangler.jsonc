@@ -11,6 +11,12 @@
   "observability": {
     "enabled": true
   },
+  "routes": [
+    {
+      "pattern": "key.raythunder.tech",
+      "custom_domain": true
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
