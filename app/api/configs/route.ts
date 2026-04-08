@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import type { KeyConfigInput, KeyConfigPatch } from "@/lib/key-config-types";
+import type { KeyConfigInput } from "@/lib/key-config-types";
 import {
   createKeyConfigs,
   deleteAllKeyConfigs,

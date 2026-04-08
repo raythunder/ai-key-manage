@@ -1042,13 +1042,28 @@ function benchmarkStatusLabel(result: ModelBenchmarkResult): string {
   return "未测试";
 }
 
-function collectFinishedBenchmarks(item: KeyConfig, runtimeBenchmarks?: Record<string, ModelBenchmarkResult>) {
-  const merged = {
-    ...(item.benchmarks || {}),
-    ...(runtimeBenchmarks || {})
+function isFinishedBenchmarkResult(benchmark: ModelBenchmarkResult): benchmark is FinishedModelBenchmarkResult {
+  return (benchmark.status === "success" || benchmark.status === "error") && typeof benchmark.testedAt === "string";
+}
+
+function mergeFinishedBenchmarkRecords(
+  item: KeyConfig,
+  runtimeBenchmarks?: Record<string, ModelBenchmarkResult>
+): Record<string, FinishedModelBenchmarkResult> {
+  const out: Record<string, FinishedModelBenchmarkResult> = {
+    ...(item.benchmarks || {})
   };
 
-  return Object.values(merged).filter(
+  for (const benchmark of Object.values(runtimeBenchmarks || {})) {
+    if (!isFinishedBenchmarkResult(benchmark)) continue;
+    out[benchmark.model] = benchmark;
+  }
+
+  return out;
+}
+
+function collectFinishedBenchmarks(item: KeyConfig, runtimeBenchmarks?: Record<string, ModelBenchmarkResult>) {
+  return Object.values(mergeFinishedBenchmarkRecords(item, runtimeBenchmarks)).filter(
     (benchmark): benchmark is FinishedModelBenchmarkResult => benchmark.status === "success"
   );
 }
@@ -2224,11 +2239,10 @@ export default function Home() {
     }));
 
     const current = configsRef.current.find((item) => item.id === id);
-    const benchmarks = {
-      ...(current?.benchmarks || {}),
+    const benchmarks = mergeFinishedBenchmarkRecords(current || { id, name: "", baseUrl: "", apiKey: "", model: "", createdAt: "" }, {
       ...(benchmarkMapRef.current[id] || {}),
       [model]: result
-    };
+    });
 
     try {
       await persistConfigPatch(id, { benchmarks });

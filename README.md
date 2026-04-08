@@ -10,8 +10,8 @@
 
 ### 🔐 配置管理
 
-- 本地保存多组配置，包含名称、Base URL、API Key、默认模型
-- 自动兼容旧版本本地数据，打开页面后会尽量把历史配置接回来
+- 使用 Cloudflare D1 持久保存多组配置，包含名称、Base URL、API Key、默认模型
+- 兼容旧版本浏览器本地数据，可一键导入到 D1
 - 支持复制单条配置，也支持复制全部配置
 - 支持导出 `.txt` 和 `.md`
 
@@ -56,15 +56,15 @@
 
 ## 隐私和数据说明
 
-当前这版项目默认还是把配置数据保存在浏览器本地的 `localStorage` 里，不会帮你托管 Key。
+当前这版项目会把配置数据写入 Cloudflare D1，不再把浏览器 `localStorage` 当作主存储。
 如果配置了访问密码，未验证前将不能进入主页面，也不能直接调用接口。
 
 但有一点要说明白: 连通性测试、模型识别、性能评测这类真实联网请求，还是会经过项目自己的同源后端接口转发。这样做主要是为了绕开浏览器直连上游时常见的 CORS 问题。
 
 简单理解就是:
 
-- 配置数据当前默认还在你自己的浏览器里
-- 项目已经补上 Cloudflare D1 的部署基础和初始化表结构
+- 配置数据会持久保存在你自己的 D1 里
+- 旧版本留在浏览器本地的数据可以手动导入到 D1
 - 访问密码将通过 Cloudflare Secret 或本地 `.dev.vars` 提供
 - 真正发请求测试时，Key 会参与当前这次后端转发请求
 
@@ -75,7 +75,7 @@ npm install
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000) 就能开始用。
+如果只是跑 `npm run dev`，页面能启动，但 D1 能力不会接入。
 
 ## 本地开发
 
@@ -84,12 +84,11 @@ npm install
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000) 就能开始用。
-
-如果要提前按 Cloudflare 运行环境做验证:
+推荐按 Cloudflare 运行环境验证，这样配置读写才会真正落到 D1:
 
 ```bash
 cp .dev.vars.example .dev.vars
+npx wrangler d1 execute ai-key-vault --local --file=./db/d1/001_initial.sql
 npm run cf-typegen
 npm run preview
 ```
