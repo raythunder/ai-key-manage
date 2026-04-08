@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "ai-key-vault",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_id": "b39220b3-ba8b-4af2-82a6-d0ba5c902a4d"
     }
   ]
 }
