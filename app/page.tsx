@@ -133,7 +133,7 @@ type CcSwitchAction = {
 
 const LEGACY_CONFIG_STORAGE_KEYS = ["ai-key-vault-configs-v1", "ai-key-vault-configs", "ai-key-check-configs-v1"];
 const INTRO_SEEN_KEY = "ai-key-vault-intro-seen-v1";
-const SOURCE_REPO_URL = "https://github.com/Yoan98/ai-key-manage";
+const SOURCE_REPO_URL = "https://github.com/raythunder/ai-key-manage";
 const PASS_TEXT = "主人，快鞭策我吧";
 const FAIL_TEXT = "主人，我不行了";
 const DEFAULT_BENCHMARK_ROUNDS = 2;
@@ -1480,6 +1480,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [testingAll, setTestingAll] = useState(false);
   const [probingAll, setProbingAll] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [detailDialogId, setDetailDialogId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<FormState>({ name: "", baseUrl: "", apiKey: "", model: "" });
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
@@ -1556,6 +1558,7 @@ export default function Home() {
     () => configs.find((item) => item.id === ccSwitchDialogId) || null,
     [configs, ccSwitchDialogId]
   );
+  const detailDialogItem = useMemo(() => configs.find((item) => item.id === detailDialogId) || null, [configs, detailDialogId]);
   const probeDialogItem = useMemo(() => configs.find((item) => item.id === probeDialogId) || null, [configs, probeDialogId]);
   const benchmarkDialogItem = useMemo(
     () => configs.find((item) => item.id === benchmarkDialogId) || null,
@@ -1881,7 +1884,7 @@ export default function Home() {
   }, [activeBenchmarkSummary, benchmarkChartModel, benchmarkDialogItem, chartReadyBenchmarkResults]);
 
   useEffect(() => {
-    const hasOverlayOpen = Boolean(benchmarkDialogItem || probeDialogItem || ccSwitchDialogItem);
+    const hasOverlayOpen = Boolean(benchmarkDialogItem || probeDialogItem || ccSwitchDialogItem || detailDialogItem || createDialogOpen);
     if (!hasOverlayOpen) return;
 
     const body = document.body;
@@ -1902,7 +1905,7 @@ export default function Home() {
       body.style.paddingRight = previousBodyPaddingRight;
       html.style.overflow = previousHtmlOverflow;
     };
-  }, [benchmarkDialogItem, ccSwitchDialogItem, probeDialogItem]);
+  }, [benchmarkDialogItem, ccSwitchDialogItem, createDialogOpen, detailDialogItem, probeDialogItem]);
 
   function ExportMenu({
     onExport,
@@ -2143,7 +2146,6 @@ export default function Home() {
       setNotice(getErrorMessage(error) || "删除失败");
       return;
     }
-
     setConfigs((prev) => prev.filter((i) => i.id !== id));
     setResultMap((prev) => {
       const next = { ...prev };
@@ -2173,7 +2175,19 @@ export default function Home() {
     if (benchmarkDialogId === id) {
       setBenchmarkDialogId(null);
     }
+    if (detailDialogId === id) {
+      setDetailDialogId(null);
+    }
     setNotice("已删除");
+  }
+
+  function openCreateDialog() {
+    resetCreateForm();
+    setCreateDialogOpen(true);
+  }
+
+  function closeCreateDialog() {
+    setCreateDialogOpen(false);
   }
 
   async function removeAllConfigs() {
@@ -2202,6 +2216,7 @@ export default function Home() {
     setModelDraft("");
     setFormSourceMeta(undefined);
     setCcSwitchDialogId(null);
+    setDetailDialogId(null);
     setProbeDialogId(null);
     setBenchmarkDialogId(null);
     setNotice("已删除全部配置");
@@ -2723,6 +2738,18 @@ export default function Home() {
     setProbeDialogId(item.id);
   }
 
+  function openDetailDialog(item: KeyConfig) {
+    setEditingId(null);
+    setEditForm({ name: "", baseUrl: "", apiKey: "", model: "" });
+    setDetailDialogId(item.id);
+  }
+
+  function closeDetailDialog() {
+    setEditingId(null);
+    setEditForm({ name: "", baseUrl: "", apiKey: "", model: "" });
+    setDetailDialogId(null);
+  }
+
   function openBenchmarkDialog(item: KeyConfig) {
     const activeProbe = probeMap[item.id] || item.probe || defaultProbeResult();
     if (activeProbe.supportedModels.length === 0) {
@@ -2822,6 +2849,7 @@ export default function Home() {
   }
 
   function startEdit(item: KeyConfig) {
+    setDetailDialogId(item.id);
     setEditingId(item.id);
     setEditForm({ name: item.name, baseUrl: item.baseUrl, apiKey: item.apiKey, model: item.model });
   }
@@ -2956,7 +2984,7 @@ export default function Home() {
             </span>
             <div>
               <p className="text-sm font-semibold text-zinc-900">项目源码 GitHub</p>
-              <p className="text-xs text-zinc-500">Yoan98/ai-key-manage</p>
+              <p className="text-xs text-zinc-500">raythunder/ai-key-manage</p>
             </div>
           </div>
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition group-hover:border-emerald-300 group-hover:bg-emerald-100">
@@ -3008,508 +3036,535 @@ export default function Home() {
         ) : null}
       </section>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <section className="rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm sm:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-zinc-900">新增配置</h2>
-            <span className="text-xs text-zinc-500">{configs.length} 条配置</span>
-          </div>
-
-          <label className={labelClass}>粘贴内容（支持一次解析多个配置）</label>
-          <textarea
-            className={inputClass}
-            value={pasteRaw}
-            onChange={(e) => setPasteRaw(e.target.value)}
-            placeholder="可粘贴 curl、JSON、环境变量、ccswitch:// 链接、多个配置块"
-            rows={3}
-          />
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className={btnGhost} onClick={applyPaste}>
-              <FaMagic aria-hidden />
-              <span>解析到表单</span>
-            </button>
-            <button type="button" className={btnPrimary} onClick={addFromPaste}>
-              <FaPaste aria-hidden />
-              <span>粘贴并直接新增</span>
-            </button>
-          </div>
-
-          <form onSubmit={addConfig} className="mt-2">
-            <label className={labelClass}>名称</label>
-            <input
-              className={inputClass}
-              value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder={`例如：${makeDefaultName(nextIndex)}`}
-            />
-
-            <label className={labelClass}>地址</label>
-            <input
-              className={inputClass}
-              value={form.baseUrl}
-              onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
-              placeholder="例如：https://api.openai.com"
-              required
-            />
-            <p className="mt-1 text-[11px] leading-5 text-zinc-500">{endpointHintText}</p>
-
-            <label className={labelClass}>Key</label>
-            <input
-              className={inputClass}
-              value={form.apiKey}
-              onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
-              placeholder="例如：sk-xxxx"
-              required
-            />
-
-            <label className={labelClass}>模型（可选）</label>
-            <input
-              className={inputClass}
-              value={form.model}
-              onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
-              placeholder="例如：gpt-4.1-mini"
-            />
-
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button type="submit" className={btnPrimary}>
-                <FaSave aria-hidden />
-                <span>保存配置</span>
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm sm:p-4">
-          <div className="mb-3 space-y-2">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm sm:p-4">
+        <div className="mb-3 space-y-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-1.5">
               <h2 className="text-base font-semibold whitespace-nowrap text-zinc-900">配置列表</h2>
               <HelpHint text={endpointHintText} />
             </div>
-            <div className="flex w-full flex-wrap items-center gap-2 pb-1">
-              {localImportCandidates.length > 0 ? (
-                <button type="button" className={topBtnGhost} onClick={importLocalConfigs}>
-                  <FaPaste aria-hidden />
-                  <span>导入本地 {localImportCandidates.length} 条</span>
-                </button>
-              ) : null}
-              <button type="button" className={topBtnPrimary} onClick={testAllConfigs} disabled={testingAll}>
-                {testingAll ? <FaSpinner className="animate-spin" aria-hidden /> : <FaBolt aria-hidden />}
-                <span>{testingAll ? "测试中" : "一键测试全部"}</span>
-              </button>
-              <button type="button" className={topBtnGhost} onClick={probeAllConfigs} disabled={probingAll}>
-                {probingAll ? <FaSpinner className="animate-spin" aria-hidden /> : <FaMagic aria-hidden />}
-                <span>{probingAll ? "识别中" : "识别全部模型"}</span>
-              </button>
-              <button
-                type="button"
-                className={topBtnGhost}
-                onClick={() => copyText(formatAll(configs, "txt"), "已复制全部配置")}
-              >
-                <FaCopy aria-hidden />
-                <span>复制全部</span>
-              </button>
-              <ExportMenu onExport={exportAll} label="导出" triggerClassName={topBtnGhost} />
-              <button type="button" className={topBtnGhost} onClick={lockAccessSession}>
-                <FaKey aria-hidden />
-                <span>锁定并退出</span>
-              </button>
-              <button
-                type="button"
-                className={topBtnDanger}
-                onClick={removeAllConfigs}
-                disabled={configs.length === 0}
-              >
-                <FaTrashAlt aria-hidden />
-                <span>一键删除</span>
-              </button>
-            </div>
+            <button type="button" className={topBtnPrimary} onClick={openCreateDialog}>
+              <FaSave aria-hidden />
+              <span>新增配置</span>
+            </button>
           </div>
+          <div className="flex w-full flex-wrap items-center gap-2 pb-1">
+            {localImportCandidates.length > 0 ? (
+              <button type="button" className={topBtnGhost} onClick={importLocalConfigs}>
+                <FaPaste aria-hidden />
+                <span>导入本地 {localImportCandidates.length} 条</span>
+              </button>
+            ) : null}
+            <button type="button" className={topBtnPrimary} onClick={testAllConfigs} disabled={testingAll}>
+              {testingAll ? <FaSpinner className="animate-spin" aria-hidden /> : <FaBolt aria-hidden />}
+              <span>{testingAll ? "测试中" : "一键测试全部"}</span>
+            </button>
+            <button type="button" className={topBtnGhost} onClick={probeAllConfigs} disabled={probingAll}>
+              {probingAll ? <FaSpinner className="animate-spin" aria-hidden /> : <FaMagic aria-hidden />}
+              <span>{probingAll ? "识别中" : "识别全部模型"}</span>
+            </button>
+            <button
+              type="button"
+              className={topBtnGhost}
+              onClick={() => copyText(formatAll(configs, "txt"), "已复制全部配置")}
+            >
+              <FaCopy aria-hidden />
+              <span>复制全部</span>
+            </button>
+            <ExportMenu onExport={exportAll} label="导出" triggerClassName={topBtnGhost} />
+            <button type="button" className={topBtnGhost} onClick={lockAccessSession}>
+              <FaKey aria-hidden />
+              <span>锁定并退出</span>
+            </button>
+            <button
+              type="button"
+              className={topBtnDanger}
+              onClick={removeAllConfigs}
+              disabled={configs.length === 0}
+            >
+              <FaTrashAlt aria-hidden />
+              <span>一键删除</span>
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+            <span>当前共 {configs.length} 条配置</span>
+            <span>主页优先显示名称、地址和 Key</span>
+          </div>
+        </div>
 
-          {configsLoading ? (
-            <p className="text-sm text-zinc-500">正在从 D1 读取配置...</p>
-          ) : configs.length === 0 ? (
-            <p className="text-sm text-zinc-500">暂无配置</p>
-          ) : (
-            <ul className="grid gap-2.5">
+        {configsLoading ? (
+          <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 text-center text-sm text-zinc-500">
+            正在从 D1 读取配置...
+          </div>
+        ) : configs.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 text-center text-sm text-zinc-500">
+            还没有配置，点击右上角“新增配置”开始添加。
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-zinc-200">
+            <div className="hidden grid-cols-[minmax(10rem,1fr)_minmax(16rem,1.4fr)_minmax(11rem,1fr)_auto] gap-3 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 md:grid">
+              <span>名称</span>
+              <span>地址</span>
+              <span>Key</span>
+              <span className="text-right">操作</span>
+            </div>
+            <ul className="divide-y divide-zinc-200">
               {configs.map((item) => {
-                const testing = loadingMap[item.id];
                 const result = resultMap[item.id] || item.lastTest || defaultTestResult();
                 const probe = probeMap[item.id] || item.probe || defaultProbeResult();
-                const isEditing = editingId === item.id;
-                const isEditingModel = editingModelId === item.id;
-                const probing = probe.status === "pending";
-                const currentModelTags = inferModelTags(item.model);
-                const runtimeBenchmarks = benchmarkMap[item.id] || {};
-                const currentBenchmark =
-                  item.model.trim() ? runtimeBenchmarks[item.model] || item.benchmarks?.[item.model] || defaultModelBenchmarkResult(item.model) : null;
-                const finishedBenchmarks = collectFinishedBenchmarks(item, runtimeBenchmarks);
-                const fastestBenchmark = pickFastestBenchmark(finishedBenchmarks);
-                const quickestFirstTokenBenchmark = pickQuickestFirstTokenBenchmark(finishedBenchmarks);
-                const recommendedBenchmark = pickRecommendedBenchmark(finishedBenchmarks);
 
                 return (
-                  <li key={item.id} className="rounded-2xl border border-zinc-200 bg-white p-2.5">
-                    {isEditing ? (
-                      <div className="rounded-xl border border-dashed border-zinc-300 p-3">
-                        <label className={labelClass}>名称</label>
-                        <input
-                          className={inputClass}
-                          value={editForm.name}
-                          onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
-                        />
-
-                        <label className={labelClass}>地址</label>
-                        <input
-                          className={inputClass}
-                          value={editForm.baseUrl}
-                          onChange={(e) => setEditForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
-                          placeholder="例如：https://api.openai.com"
-                        />
-                        <p className="mt-1 text-[11px] leading-5 text-zinc-500">{endpointHintText}</p>
-
-                        <label className={labelClass}>Key</label>
-                        <input
-                          className={inputClass}
-                          value={editForm.apiKey}
-                          onChange={(e) => setEditForm((prev) => ({ ...prev, apiKey: e.target.value }))}
-                        />
-
-                        <label className={labelClass}>模型</label>
-                        <input
-                          className={inputClass}
-                          value={editForm.model}
-                          onChange={(e) => setEditForm((prev) => ({ ...prev, model: e.target.value }))}
-                        />
-
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <button type="button" className={btnPrimary} onClick={() => saveEdit(item.id)}>
-                            <FaSave aria-hidden />
-                            <span>保存编辑</span>
-                          </button>
-                          <button type="button" className={btnGhost} onClick={cancelEdit}>
-                            <FaTimesCircle aria-hidden />
-                            <span>取消</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
+                  <li key={item.id} className="px-4 py-3">
+                    <div className="grid gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(16rem,1.4fr)_minmax(11rem,1fr)_auto] md:items-center">
+                      <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-base font-bold text-zinc-900">{item.name}</div>
-                          <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
+                          <p className="truncate text-sm font-semibold text-zinc-900">{item.name}</p>
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
                             {getSourceBadge(item.sourceMeta)}
                           </span>
                         </div>
-
-                        <div className="mt-2 grid gap-2">
-                          <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <FaLink aria-hidden /> 地址
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <span className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(result.status)}`}>
+                            <StatusIcon status={result.status} />
+                            <span>{result.status === "idle" ? "未测试" : result.message}</span>
+                          </span>
+                          <span className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(probe.status)}`}>
+                            <StatusIcon status={probe.status} />
+                            <span>
+                              {probe.status === "idle"
+                                ? "未识别"
+                                : probe.status === "pending"
+                                  ? "识别中"
+                                  : probe.status === "success"
+                                    ? `${probe.supportedModels.length} 个模型`
+                                    : "识别失败"}
                             </span>
-                            <div className="flex min-w-0 max-w-full items-start gap-1.5">
-                              <span className="min-w-0 flex-1 break-all text-sm text-zinc-800">{item.baseUrl || "(未填写)"}</span>
-                              <button
-                                type="button"
-                                className={iconCopyBtn}
-                                onClick={() => copyText(item.baseUrl, `已复制地址：${item.name}`)}
-                                title="复制地址"
-                                aria-label="复制地址"
-                                disabled={!item.baseUrl}
-                              >
-                                <FaCopy aria-hidden />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <FaKey aria-hidden /> Key
-                            </span>
-                            <div className="flex min-w-0 max-w-full items-start gap-1.5">
-                              <span className="min-w-0 flex-1 break-all font-mono text-sm text-zinc-800">
-                                {item.apiKey ? toMaskedKey(item.apiKey) : "(未填写)"}
-                              </span>
-                              <button
-                                type="button"
-                                className={iconCopyBtn}
-                                onClick={() => copyText(item.apiKey, `已复制 Key：${item.name}`)}
-                                title="复制 Key"
-                                aria-label="复制 Key"
-                                disabled={!item.apiKey}
-                              >
-                                <FaCopy aria-hidden />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <FaTag aria-hidden /> 模型
-                            </span>
-                            <div className="grid gap-1.5">
-                              {isEditingModel ? (
-                                <input
-                                  autoFocus
-                                  className={inputClass}
-                                  value={modelDraft}
-                                  onChange={(e) => setModelDraft(e.target.value)}
-                                  onBlur={() => saveInlineModelEdit(item.id)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      saveInlineModelEdit(item.id);
-                                    }
-                                    if (e.key === "Escape") {
-                                      e.preventDefault();
-                                      cancelInlineModelEdit();
-                                    }
-                                  }}
-                                  placeholder="点击后可修改"
-                                />
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="inline-flex w-fit rounded-md border border-zinc-200 px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-50"
-                                  onClick={() => startInlineModelEdit(item)}
-                                  title="点击编辑模型"
-                                  aria-label="点击编辑模型"
-                                >
-                                  {item.model || "点击设置模型"}
-                                </button>
-                              )}
-                              {currentModelTags.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {currentModelTags.map((tag) => (
-                                    <span
-                                      key={`${item.id}-${tag}`}
-                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.08em] ${getTagClassName(tag)}`}
-                                    >
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <FaVial aria-hidden /> 状态
-                            </span>
-                            <div className="grid gap-1">
-                              <span
-                                className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusPillClass(result.status)}`}
-                              >
-                                <StatusIcon status={result.status} />
-                                <span>{result.message}</span>
-                              </span>
-                              {result.status === "error" && result.detail ? (
-                                <details className="w-full rounded-lg border border-red-100 bg-red-50/50 px-2 py-1.5 text-xs text-red-800">
-                                  <summary className="cursor-pointer font-medium text-red-700">有错误，点击查看详情</summary>
-                                  <div className="mt-1 whitespace-pre-wrap break-words leading-5">{result.detail}</div>
-                                </details>
-                              ) : result.detail ? (
-                                <span className="text-xs text-zinc-500">{result.detail}</span>
-                              ) : null}
-                              {result.responseText ? (
-                                <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3">
-                                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                                      AI 返回内容
-                                    </div>
-                                    {result.responseSource ? (
-                                      <span className="rounded-full border border-emerald-300 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                        来源：{testResponseSourceLabel(result.responseSource)}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  <div className="whitespace-pre-wrap break-words text-xs leading-5 text-emerald-950">
-                                    {result.responseText}
-                                  </div>
-                                </div>
-                              ) : null}
-                              {item.lastTest?.testedAt ? (
-                                <span className="text-xs text-zinc-500">
-                                  上次测试：{toDateTimeLabel(item.lastTest.testedAt)}（
-                                  {item.lastTest.status === "success" ? "通过" : "失败"}）
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <FaMagic aria-hidden /> 模型识别
-                              <HelpHint text="读取这组地址和 Key 可见的模型列表，帮助你先知道有哪些模型可以选。" />
-                            </span>
-                            <div className="grid gap-1">
-                              <span
-                                className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusPillClass(probe.status)}`}
-                              >
-                                <StatusIcon status={probe.status} />
-                                <span>
-                                  {probe.status === "idle"
-                                    ? "未识别"
-                                    : probe.status === "pending"
-                                      ? "识别中..."
-                                      : probe.status === "success"
-                                        ? "识别成功"
-                                        : "识别失败"}
-                                </span>
-                              </span>
-                              {probe.recommendedModel ? (
-                                <span className="text-xs text-zinc-600">推荐模型：{probe.recommendedModel}</span>
-                              ) : null}
-                              {probe.supportedModels.length > 0 ? (
-                                <button
-                                  type="button"
-                                  className="inline-flex w-fit items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
-                                  onClick={() => openProbeDialog(item)}
-                                >
-                                  <FaMagic aria-hidden />
-                                  <span>查看 {probe.supportedModels.length} 个模型</span>
-                                </button>
-                              ) : null}
-                              {probe.detail ? <span className="text-xs text-zinc-500">{probe.detail}</span> : null}
-                              {probe.testedAt ? (
-                                <span className="text-xs text-zinc-500">最近识别：{toDateTimeLabel(probe.testedAt)}</span>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <FaBolt aria-hidden /> 性能评测
-                              <HelpHint text="对已识别到的模型做响应速度测试，帮你挑一个更适合日常使用的默认模型。" />
-                            </span>
-                            <div className="grid min-w-0 gap-1.5">
-                              <span
-                                className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
-                                  currentBenchmark ? statusPillClass(currentBenchmark.status) : statusPillClass("idle")
-                                }`}
-                              >
-                                <StatusIcon status={currentBenchmark?.status || "idle"} />
-                                <span>{currentBenchmark ? benchmarkStatusLabel(currentBenchmark) : "未测试"}</span>
-                              </span>
-                              {currentBenchmark?.speed?.medianMs ? (
-                                <span className="break-all text-xs leading-5 text-zinc-600">
-                                  当前中位：{formatDurationLabel(currentBenchmark.speed.medianMs)}
-                                </span>
-                              ) : null}
-                              {currentBenchmark?.speed?.firstTokenMedianMs ? (
-                                <span className="break-all text-xs leading-5 text-zinc-600">
-                                  当前首字：{formatDurationLabel(currentBenchmark.speed.firstTokenMedianMs)}
-                                </span>
-                              ) : null}
-                              {finishedBenchmarks.length > 0 ? (
-                                <span className="break-all text-xs leading-5 text-zinc-500">已测：{finishedBenchmarks.length} 个模型</span>
-                              ) : null}
-                              {fastestBenchmark?.speed?.medianMs ? (
-                                <span className="break-all text-xs leading-5 text-zinc-500">
-                                  最快：{fastestBenchmark.model} · {formatDurationLabel(fastestBenchmark.speed.medianMs)}
-                                </span>
-                              ) : null}
-                              {quickestFirstTokenBenchmark?.speed?.firstTokenMedianMs ? (
-                                <span className="break-all text-xs leading-5 text-zinc-500">
-                                  首字最快：{quickestFirstTokenBenchmark.model} ·{" "}
-                                  {formatDurationLabel(quickestFirstTokenBenchmark.speed.firstTokenMedianMs)}
-                                </span>
-                              ) : null}
-                              {recommendedBenchmark ? (
-                                <span className="break-all text-xs leading-5 text-zinc-500">
-                                  推荐默认：{recommendedBenchmark.model}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
+                          </span>
                         </div>
+                      </div>
 
-                        <div className="mt-3 grid gap-2 border-t border-zinc-200 pt-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              className={smallBtn}
-                              onClick={() => testConfig(item)}
-                              disabled={testing}
-                              title="测试"
-                              aria-label="测试"
-                            >
-                              {testing ? <FaSpinner className="animate-spin" aria-hidden /> : <FaBolt aria-hidden />}
-                              <span>测试</span>
-                            </button>
-                            <button
-                              type="button"
-                              className={smallBtn}
-                              onClick={() => probeConfig(item)}
-                              disabled={probing}
-                              title="识别模型"
-                              aria-label="识别模型"
-                            >
-                              {probing ? <FaSpinner className="animate-spin" aria-hidden /> : <FaMagic aria-hidden />}
-                              <span>识别模型</span>
-                            </button>
-                            <button
-                              type="button"
-                              className={smallBtn}
-                              onClick={() => openBenchmarkDialog(item)}
-                              disabled={probe.supportedModels.length === 0}
-                              title={probe.supportedModels.length > 0 ? "性能评测" : "请先识别模型"}
-                              aria-label={probe.supportedModels.length > 0 ? "性能评测" : "请先识别模型"}
-                            >
-                              <FaVial aria-hidden />
-                              <span>性能评测</span>
-                            </button>
-                          </div>
-
-                          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-                            <button
-                              type="button"
-                              className={smallBtn}
-                              onClick={() => copyText(formatConfig(item, "txt"), `已复制：${item.name}`)}
-                              title="复制"
-                              aria-label="复制"
-                            >
-                              <FaCopy aria-hidden />
-                              <span>复制</span>
-                            </button>
-                            <ExportMenu
-                              onExport={(type) => exportOne(item, type)}
-                              extraActions={[{ label: "导出到 CC Switch", onClick: () => openCcSwitchDialog(item), tone: "accent" }]}
-                              label="导出·CC"
-                              size="small"
-                            />
-                            <button
-                              type="button"
-                              className={smallBtn}
-                              onClick={() => startEdit(item)}
-                              title="编辑"
-                              aria-label="编辑"
-                            >
-                              <FaEdit aria-hidden />
-                              <span>编辑</span>
-                            </button>
-                            <button
-                              type="button"
-                              className={smallDangerBtn}
-                              onClick={() => removeConfig(item.id)}
-                              title="删除"
-                              aria-label="删除"
-                            >
-                              <FaTrashAlt aria-hidden />
-                              <span>删除</span>
-                            </button>
-                          </div>
+                      <div className="min-w-0">
+                        <p className="mb-1 text-xs font-medium text-zinc-500 md:hidden">地址</p>
+                        <div className="flex items-start gap-2">
+                          <p className="min-w-0 flex-1 break-all text-sm text-zinc-800">{item.baseUrl || "(未填写)"}</p>
+                          <button
+                            type="button"
+                            className={iconCopyBtn}
+                            onClick={() => copyText(item.baseUrl, `已复制地址：${item.name}`)}
+                            disabled={!item.baseUrl}
+                            title={`复制 ${item.name} 的地址`}
+                            aria-label={`复制 ${item.name} 的地址`}
+                          >
+                            <FaCopy aria-hidden />
+                          </button>
                         </div>
-                      </>
-                    )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="mb-1 text-xs font-medium text-zinc-500 md:hidden">Key</p>
+                        <div className="flex items-start gap-2">
+                          <p className="min-w-0 flex-1 break-all font-mono text-sm text-zinc-800">
+                            {item.apiKey ? toMaskedKey(item.apiKey) : "(未填写)"}
+                          </p>
+                          <button
+                            type="button"
+                            className={iconCopyBtn}
+                            onClick={() => copyText(item.apiKey, `已复制 Key：${item.name}`)}
+                            disabled={!item.apiKey}
+                            title={`复制 ${item.name} 的 Key`}
+                            aria-label={`复制 ${item.name} 的 Key`}
+                          >
+                            <FaCopy aria-hidden />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+                        <button
+                          type="button"
+                          className={smallBtn}
+                          onClick={() => openDetailDialog(item)}
+                        >
+                          <FaInfoCircle aria-hidden />
+                          <span>详情</span>
+                        </button>
+                      </div>
+                    </div>
                   </li>
                 );
               })}
             </ul>
-          )}
-        </section>
-      </div>
+          </div>
+        )}
+      </section>
+
+      {createDialogOpen ? (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-950/35 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-3xl border border-zinc-200 bg-white p-4 shadow-2xl sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-zinc-900">新增配置</p>
+                <p className="mt-1 text-sm text-zinc-500">支持先粘贴解析，再确认保存。</p>
+              </div>
+              <button type="button" className={smallBtn} onClick={closeCreateDialog}>
+                <FaTimesCircle aria-hidden />
+                <span>关闭</span>
+              </button>
+            </div>
+
+            <label className={labelClass}>粘贴内容（支持一次解析多个配置）</label>
+            <textarea
+              className={inputClass}
+              value={pasteRaw}
+              onChange={(e) => setPasteRaw(e.target.value)}
+              placeholder="可粘贴 curl、JSON、环境变量、ccswitch:// 链接、多个配置块"
+              rows={4}
+            />
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" className={btnGhost} onClick={applyPaste}>
+                <FaMagic aria-hidden />
+                <span>解析到表单</span>
+              </button>
+              <button type="button" className={btnPrimary} onClick={addFromPaste}>
+                <FaPaste aria-hidden />
+                <span>粘贴并直接新增</span>
+              </button>
+            </div>
+
+            <form onSubmit={addConfig} className="mt-3">
+              <label className={labelClass}>名称</label>
+              <input
+                className={inputClass}
+                value={form.name}
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder={`例如：${makeDefaultName(nextIndex)}`}
+              />
+
+              <label className={labelClass}>地址</label>
+              <input
+                className={inputClass}
+                value={form.baseUrl}
+                onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                placeholder="例如：https://api.openai.com"
+                required
+              />
+              <p className="mt-1 text-[11px] leading-5 text-zinc-500">{endpointHintText}</p>
+
+              <label className={labelClass}>Key</label>
+              <input
+                className={inputClass}
+                value={form.apiKey}
+                onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+                placeholder="例如：sk-xxxx"
+                required
+              />
+
+              <label className={labelClass}>模型（可选）</label>
+              <input
+                className={inputClass}
+                value={form.model}
+                onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
+                placeholder="例如：gpt-4.1-mini"
+              />
+
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button type="button" className={btnGhost} onClick={closeCreateDialog}>
+                  <FaTimesCircle aria-hidden />
+                  <span>取消</span>
+                </button>
+                <button type="submit" className={btnPrimary}>
+                  <FaSave aria-hidden />
+                  <span>保存配置</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {detailDialogItem ? (
+        <div className="fixed inset-0 z-30 overflow-y-auto bg-zinc-950/35 px-4 py-6">
+          <div className="mx-auto w-full max-w-4xl rounded-3xl border border-zinc-200 bg-white p-4 shadow-2xl sm:p-5">
+            {(() => {
+              const item = detailDialogItem;
+              const testing = loadingMap[item.id];
+              const result = resultMap[item.id] || item.lastTest || defaultTestResult();
+              const probe = probeMap[item.id] || item.probe || defaultProbeResult();
+              const isEditing = editingId === item.id;
+              const isEditingModel = editingModelId === item.id;
+              const probing = probe.status === "pending";
+              const currentModelTags = inferModelTags(item.model);
+              const runtimeBenchmarks = benchmarkMap[item.id] || {};
+              const currentBenchmark =
+                item.model.trim() ? runtimeBenchmarks[item.model] || item.benchmarks?.[item.model] || defaultModelBenchmarkResult(item.model) : null;
+              const finishedBenchmarks = collectFinishedBenchmarks(item, runtimeBenchmarks);
+              const fastestBenchmark = pickFastestBenchmark(finishedBenchmarks);
+              const quickestFirstTokenBenchmark = pickQuickestFirstTokenBenchmark(finishedBenchmarks);
+              const recommendedBenchmark = pickRecommendedBenchmark(finishedBenchmarks);
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-semibold text-zinc-900">{item.name}</p>
+                        <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
+                          {getSourceBadge(item.sourceMeta)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-zinc-500">详细操作都集中在这里完成。</p>
+                    </div>
+                    <button type="button" className={smallBtn} onClick={closeDetailDialog}>
+                      <FaTimesCircle aria-hidden />
+                      <span>关闭</span>
+                    </button>
+                  </div>
+
+                  {isEditing ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-zinc-300 p-4">
+                      <label className={labelClass}>名称</label>
+                      <input
+                        className={inputClass}
+                        value={editForm.name}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                      />
+
+                      <label className={labelClass}>地址</label>
+                      <input
+                        className={inputClass}
+                        value={editForm.baseUrl}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                        placeholder="例如：https://api.openai.com"
+                      />
+                      <p className="mt-1 text-[11px] leading-5 text-zinc-500">{endpointHintText}</p>
+
+                      <label className={labelClass}>Key</label>
+                      <input
+                        className={inputClass}
+                        value={editForm.apiKey}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+                      />
+
+                      <label className={labelClass}>模型</label>
+                      <input
+                        className={inputClass}
+                        value={editForm.model}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, model: e.target.value }))}
+                      />
+
+                      <div className="mt-4 flex flex-wrap justify-end gap-2">
+                        <button type="button" className={btnGhost} onClick={cancelEdit}>
+                          <FaTimesCircle aria-hidden />
+                          <span>取消</span>
+                        </button>
+                        <button type="button" className={btnPrimary} onClick={() => saveEdit(item.id)}>
+                          <FaSave aria-hidden />
+                          <span>保存编辑</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">地址</p>
+                          <div className="mt-2 flex items-start gap-2">
+                            <p className="min-w-0 flex-1 break-all text-sm text-zinc-900">{item.baseUrl || "(未填写)"}</p>
+                            <button
+                              type="button"
+                              className={iconCopyBtn}
+                              onClick={() => copyText(item.baseUrl, `已复制地址：${item.name}`)}
+                              disabled={!item.baseUrl}
+                            >
+                              <FaCopy aria-hidden />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Key</p>
+                          <div className="mt-2 flex items-start gap-2">
+                            <p className="min-w-0 flex-1 break-all font-mono text-sm text-zinc-900">{item.apiKey ? toMaskedKey(item.apiKey) : "(未填写)"}</p>
+                            <button
+                              type="button"
+                              className={iconCopyBtn}
+                              onClick={() => copyText(item.apiKey, `已复制 Key：${item.name}`)}
+                              disabled={!item.apiKey}
+                            >
+                              <FaCopy aria-hidden />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-2xl border border-zinc-200 bg-white p-3">
+                        <div className="grid gap-3 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
+                          <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
+                            <FaTag aria-hidden /> 模型
+                          </span>
+                          <div className="grid gap-1.5">
+                            {isEditingModel ? (
+                              <input
+                                autoFocus
+                                className={inputClass}
+                                value={modelDraft}
+                                onChange={(e) => setModelDraft(e.target.value)}
+                                onBlur={() => saveInlineModelEdit(item.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    saveInlineModelEdit(item.id);
+                                  }
+                                  if (e.key === "Escape") {
+                                    e.preventDefault();
+                                    cancelInlineModelEdit();
+                                  }
+                                }}
+                                placeholder="点击后可修改"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                className="inline-flex w-fit rounded-md border border-zinc-200 px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-50"
+                                onClick={() => startInlineModelEdit(item)}
+                              >
+                                {item.model || "点击设置模型"}
+                              </button>
+                            )}
+                            {currentModelTags.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {currentModelTags.map((tag) => (
+                                  <span
+                                    key={`${item.id}-${tag}`}
+                                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.08em] ${getTagClassName(tag)}`}
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+                          <p className="mb-2 text-sm font-semibold text-zinc-900">连通状态</p>
+                          <span className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusPillClass(result.status)}`}>
+                            <StatusIcon status={result.status} />
+                            <span>{result.message}</span>
+                          </span>
+                          {result.detail ? <p className="mt-2 text-xs leading-5 text-zinc-500">{result.detail}</p> : null}
+                          {result.responseText ? (
+                            <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs leading-5 text-emerald-950">
+                              {result.responseText}
+                            </div>
+                          ) : null}
+                          {item.lastTest?.testedAt ? <p className="mt-2 text-xs text-zinc-500">上次测试：{toDateTimeLabel(item.lastTest.testedAt)}</p> : null}
+                        </div>
+
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+                          <p className="mb-2 text-sm font-semibold text-zinc-900">模型识别</p>
+                          <span className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusPillClass(probe.status)}`}>
+                            <StatusIcon status={probe.status} />
+                            <span>
+                              {probe.status === "idle"
+                                ? "未识别"
+                                : probe.status === "pending"
+                                  ? "识别中..."
+                                  : probe.status === "success"
+                                    ? "识别成功"
+                                    : "识别失败"}
+                            </span>
+                          </span>
+                          {probe.recommendedModel ? <p className="mt-2 text-xs text-zinc-600">推荐模型：{probe.recommendedModel}</p> : null}
+                          {probe.detail ? <p className="mt-2 text-xs leading-5 text-zinc-500">{probe.detail}</p> : null}
+                          {probe.testedAt ? <p className="mt-2 text-xs text-zinc-500">最近识别：{toDateTimeLabel(probe.testedAt)}</p> : null}
+                        </div>
+
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+                          <p className="mb-2 text-sm font-semibold text-zinc-900">性能评测</p>
+                          <span className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
+                            currentBenchmark ? statusPillClass(currentBenchmark.status) : statusPillClass("idle")
+                          }`}>
+                            <StatusIcon status={currentBenchmark?.status || "idle"} />
+                            <span>{currentBenchmark ? benchmarkStatusLabel(currentBenchmark) : "未测试"}</span>
+                          </span>
+                          {finishedBenchmarks.length > 0 ? <p className="mt-2 text-xs text-zinc-500">已测 {finishedBenchmarks.length} 个模型</p> : null}
+                          {fastestBenchmark?.speed?.medianMs ? <p className="mt-2 text-xs text-zinc-500">最快：{fastestBenchmark.model} · {formatDurationLabel(fastestBenchmark.speed.medianMs)}</p> : null}
+                          {quickestFirstTokenBenchmark?.speed?.firstTokenMedianMs ? <p className="mt-2 text-xs text-zinc-500">首字最快：{quickestFirstTokenBenchmark.model} · {formatDurationLabel(quickestFirstTokenBenchmark.speed.firstTokenMedianMs)}</p> : null}
+                          {recommendedBenchmark ? <p className="mt-2 text-xs text-zinc-500">推荐默认：{recommendedBenchmark.model}</p> : null}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-200 pt-4">
+                        <button
+                          type="button"
+                          className={smallBtn}
+                          onClick={() => testConfig(item)}
+                          disabled={testing}
+                        >
+                          {testing ? <FaSpinner className="animate-spin" aria-hidden /> : <FaBolt aria-hidden />}
+                          <span>测试</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={smallBtn}
+                          onClick={() => probeConfig(item)}
+                          disabled={probing}
+                        >
+                          {probing ? <FaSpinner className="animate-spin" aria-hidden /> : <FaMagic aria-hidden />}
+                          <span>识别模型</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={smallBtn}
+                          onClick={() => openBenchmarkDialog(item)}
+                          disabled={probe.supportedModels.length === 0}
+                        >
+                          <FaVial aria-hidden />
+                          <span>性能评测</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={smallBtn}
+                          onClick={() => copyText(formatConfig(item, "txt"), `已复制：${item.name}`)}
+                        >
+                          <FaCopy aria-hidden />
+                          <span>复制</span>
+                        </button>
+                        <ExportMenu
+                          onExport={(type) => exportOne(item, type)}
+                          extraActions={[{ label: "导出到 CC Switch", onClick: () => openCcSwitchDialog(item), tone: "accent" }]}
+                          label="导出·CC"
+                          size="small"
+                        />
+                        <button
+                          type="button"
+                          className={smallBtn}
+                          onClick={() => startEdit(item)}
+                        >
+                          <FaEdit aria-hidden />
+                          <span>编辑</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={smallDangerBtn}
+                          onClick={() => removeConfig(item.id)}
+                        >
+                          <FaTrashAlt aria-hidden />
+                          <span>删除</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      ) : null}
 
       {ccSwitchDialogItem ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-950/35 px-4">
